@@ -559,6 +559,34 @@ namespace aux {
 		m_ssl_ctx.set_verify_mode(boost::asio::ssl::context::verify_none, ec);
 		m_ssl_ctx.set_default_verify_paths(ec);
 		m_peer_ssl_ctx.set_verify_mode(boost::asio::ssl::context::verify_none, ec);
+#ifdef TORRENT_WINDOWS
+		// load certificates from the windows system certificate store
+		X509_STORE* store = X509_STORE_new();
+		if (store)
+		{
+			HCERTSTORE system_store = CertOpenSystemStore(NULL, L"ROOT");
+			// this is best effort
+			if (system_store)
+			{
+				CCERT_CONTEXT* ctx = nullptr;
+				while (ctx = CertEnumCertificatesInStore(system_store, ctx))
+				{
+					X509* x509 = d2i_X509(nullptr
+						, reinterpret_cast<unsigned char const**>(&ctx->pbCertEncoded)
+						, ctx->cbCertEncoded);
+					// this is best effort
+					if (!x509) continue;
+					X509_STORE_add_cert(store, x509);
+					X509_free(x509);
+				}
+			}
+
+			CertFreeCertificateContext(ctx);
+			CertCloseStore(system_store, 0);
+		}
+
+		SSL_CTX_set_cert_store(m_ssl_ctx->native_handle(), cert_store);
+#endif
 #if OPENSSL_VERSION_NUMBER >= 0x90812f
 		aux::openssl_set_tlsext_servername_callback(m_peer_ssl_ctx.native_handle()
 			, servername_callback);
